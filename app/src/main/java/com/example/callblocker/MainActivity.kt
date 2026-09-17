@@ -3,10 +3,7 @@ package com.example.callblocker
 import android.Manifest
 import android.app.role.RoleManager
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
-import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
@@ -51,6 +48,10 @@ class MainActivity : ComponentActivity() {
     private val requestPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* géré via Snackbar */ }
 
+    // Launcher pour la demande du rôle "application de filtrage d'appels"
+    private val requestRoleLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { /* résultat vérifiable via le bouton "Vérifier" */ }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -64,7 +65,7 @@ class MainActivity : ComponentActivity() {
                 // État de l'écran courant
                 var currentScreen by remember { mutableStateOf("main") }
 
-                // Liste observable pour la blacklist
+                // Liste observable pour la blacklist (numéros déjà normalisés)
                 val blacklist = remember { mutableStateListOf<String>() }
 
                 // Charger la blacklist en toute sécurité
@@ -103,8 +104,17 @@ class MainActivity : ComponentActivity() {
                                     showAppMessage(scope, snackbarHostState, "Demande de permissions lancée")
                                 },
                                 onOpenCallScreeningSettings = {
-                                    val intent = Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
-                                    startActivity(intent)
+                                    val roleManager = context.getSystemService(RoleManager::class.java)
+                                    if (roleManager != null && roleManager.isRoleAvailable(RoleManager.ROLE_CALL_SCREENING)) {
+                                        val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_CALL_SCREENING)
+                                        requestRoleLauncher.launch(intent)
+                                    } else {
+                                        showAppMessage(
+                                            scope,
+                                            snackbarHostState,
+                                            "Rôle de filtrage d'appels indisponible sur cet appareil"
+                                        )
+                                    }
                                 },
                                 onCheckCallScreeningApp = {
                                     val isActive = isCallScreeningAppActive(context)
@@ -119,10 +129,14 @@ class MainActivity : ComponentActivity() {
                         } else if (currentScreen == "blacklist") {
                             BlacklistScreen(
                                 blacklist = blacklist,
-                                onAddNumber = {
-                                    addToBlacklist(this@MainActivity, it)
-                                    blacklist.add(it)
-                                    showAppMessage(scope, snackbarHostState, "Numéro ajouté ✅")
+                                onAddNumber = { rawNumber ->
+                                    val normalized = addToBlacklist(this@MainActivity, rawNumber)
+                                    if (normalized != null) {
+                                        if (!blacklist.contains(normalized)) blacklist.add(normalized)
+                                        showAppMessage(scope, snackbarHostState, "Numéro ajouté ✅")
+                                    } else {
+                                        showAppMessage(scope, snackbarHostState, "Numéro invalide")
+                                    }
                                 },
                                 onRemoveNumber = {
                                     removeFromBlacklist(this@MainActivity, it)

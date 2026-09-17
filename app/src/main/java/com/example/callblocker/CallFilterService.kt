@@ -1,21 +1,14 @@
 package com.example.callblocker
 
+import android.telecom.Call
 import android.telecom.CallScreeningService
-import android.telecom.Call.Details
-import android.telecom.CallScreeningService.CallResponse
-import android.content.Context
 
 class CallFilterService : CallScreeningService() {
 
-    override fun onScreenCall(callDetails: Details) {
-        val incomingNumber = callDetails.handle.schemeSpecificPart ?: return
-        val context = this
+    override fun onScreenCall(callDetails: Call.Details) {
+        val incomingNumber = callDetails.handle?.schemeSpecificPart ?: return
 
-        val blacklist = loadBlacklist(context)
-
-        val shouldBlock = blacklist.any { prefix ->
-            incomingNumber.startsWith(prefix)
-        }
+        val shouldBlock = isNumberBlocked(applicationContext, incomingNumber)
 
         val response = if (shouldBlock) {
             CallResponse.Builder()
